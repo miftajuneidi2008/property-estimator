@@ -18,6 +18,7 @@ import { WizardStep2 } from "./components/WizardStep2"
 import { WizardStep3 } from "./components/WizardStep3"
 import { WizardStep4 } from "./components/WizardStep4"
 import { Role, Status, View, AppUser, Floor, ValResult, Request } from "./types"
+import { getDefaultLocationRate } from "./lib/city-config"
 
 // ─── Valuation Engine ───────────────────────────────────────────────
 const UNIT_RATES: Record<string, number> = {
@@ -98,7 +99,8 @@ function calcValuation(r: Partial<Request>): ValResult {
   const consultancyCost = calculateConsultancyFee(projectCost)
   
   // Location Value (Land Value per BRD 4.2.1)
-  const locRate = LOC_RATES[(r.subCity || "bole").toLowerCase()] || LOC_RATES["bole"]
+  // Use city-based lookup from Location Value Sheets in Excel
+  const locRate = getDefaultLocationRate(r.town || "Addis Ababa")
   const locationValue = (r.plotArea || 0) * locRate
   
   // ─── Depreciation per BRD 4.2.15 ───

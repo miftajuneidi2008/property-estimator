@@ -1,6 +1,7 @@
 "use client"
 
 import { Request } from "../types"
+import { CITIES } from "../lib/city-config"
 
 interface Props {
   form: Partial<Request>
@@ -33,8 +34,20 @@ export function WizardStep1({ form, set }: Props) {
       <hr className="border-border" />
       <h4 className="font-medium text-foreground text-sm">Property Location</h4>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        {/* City Dropdown - from Location Value Sheets */}
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1.5">City / Town *</label>
+          <select
+            value={form.town || "Addis Ababa"}
+            onChange={e => set("town", e.target.value)}
+            className="w-full border border-border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#006B5E]/30 focus:border-[#006B5E] bg-white"
+          >
+            {CITIES.map(city => (
+              <option key={city} value={city}>{city}</option>
+            ))}
+          </select>
+        </div>
         {[
-          { label: "Town", key: "town" },
           { label: "Sub-City", key: "subCity" },
           { label: "Woreda", key: "woreda" },
           { label: "House No.", key: "houseNo" },
