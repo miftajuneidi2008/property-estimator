@@ -1,7 +1,7 @@
 "use client"
 
 import { Request } from "../types"
-import { CITIES } from "../lib/city-config"
+import { CITIES, getSubCities } from "../lib/city-config"
 
 interface Props {
   form: Partial<Request>
@@ -47,8 +47,30 @@ export function WizardStep1({ form, set }: Props) {
             ))}
           </select>
         </div>
+        {/* Sub-City: Dropdown for Addis Ababa, text input for others */}
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1.5">Sub-City</label>
+          {form.town === "Addis Ababa" ? (
+            <select
+              value={form.subCity || ""}
+              onChange={e => set("subCity", e.target.value)}
+              className="w-full border border-border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#006B5E]/30 focus:border-[#006B5E] bg-white"
+            >
+              <option value="">Select sub-city...</option>
+              {getSubCities("Addis Ababa").map(subCity => (
+                <option key={subCity} value={subCity}>{subCity}</option>
+              ))}
+            </select>
+          ) : (
+            <input
+              type="text"
+              value={form.subCity || ""}
+              onChange={e => set("subCity", e.target.value)}
+              className="w-full border border-border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#006B5E]/30 focus:border-[#006B5E]"
+            />
+          )}
+        </div>
         {[
-          { label: "Sub-City", key: "subCity" },
           { label: "Woreda", key: "woreda" },
           { label: "House No.", key: "houseNo" },
         ].map(f => (
@@ -64,9 +86,7 @@ export function WizardStep1({ form, set }: Props) {
         ))}
         {[
           { label: "Plot Area (m²) *", key: "plotArea", type: "number" },
-          { label: "Compound Area (m²)", key: "compoundArea", type: "number" },
           { label: "Distance from Main Road", key: "distanceFromMain" },
-          { label: "Land Mark / Nearby Landmark", key: "landMark" },
         ].map(f => (
           <div key={f.key}>
             <label className="block text-xs font-medium text-muted-foreground mb-1.5">{f.label}</label>

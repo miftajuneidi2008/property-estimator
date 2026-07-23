@@ -1,7 +1,61 @@
 /**
- * City Configuration from Excel Location Value Sheets
- * Extracts cities and their reference data from the property valuation excel files
+ * City Configuration from Excel Location Value Sheets & Real Property Valuation Manual
+ * Extracts cities and their reference data from the property valuation excel files and manual
  */
+
+// Addis Ababa Sub-Cities/Zones from Real Property Valuation Manual (Condominium sites)
+// Per ZamZam Bank Real Property Valuation Manual May 2023
+export const ADDIS_ABABA_SUBCITIES = [
+  "Addis Ketema",
+  "Gulele",
+  "Ajamba",
+  "Amanuel",
+  "Atikilt Tera",
+  "Aware",
+  "Ayat - Tafo",
+  "Ayat - 1",
+  "Ayat - 2",
+  "Ayat - 3",
+  "Ayat - 4",
+  "Balderas",
+  "Basha Wolde",
+  "Bole Arabsa",
+  "Bole Bulbula",
+  "Cherkos",
+  "Deginet",
+  "Feres Bet",
+  "Gelan",
+  "Gerjie",
+  "Gofa Camp",
+  "Gotera",
+  "Haile Garment",
+  "Jemo -1",
+  "Jemo -2",
+  "Jemo -3",
+  "Kality Total",
+  "Klinto",
+  "Koye Feche",
+  "Laphto - 1",
+  "Laphto - 2",
+  "Lideta",
+  "Mekanissa",
+  "Menen",
+  "Meskel Flower",
+  "Mikili Land",
+  "Repi1 (Girar)",
+  "Repi - 2",
+  "Saris",
+  "Summit",
+  "Teklehaimanot",
+  "Torhalloch",
+  "Tsion",
+  "Tulu Dimtu",
+  "Woira",
+  "Yeka Abado",
+  "Yigezu (Enkulal Fabrika)",
+  "Enderasie",
+  "Yeka Adwa",
+];
 
 // All cities available in the property valuation system
 // Source: Location Value Sheets from XY-1 and sample-report Excel files
@@ -187,6 +241,14 @@ export function getDefaultLocationRate(city: string): number {
   
   // Fallback to a reasonable default (Addis Ababa rate)
   return 26368;
+}
+
+// Get sub-cities for a given city
+export function getSubCities(city: string): string[] {
+  if (city === "Addis Ababa") {
+    return ADDIS_ABABA_SUBCITIES;
+  }
+  return [];
 }
 
 // City categories for grouping in UI

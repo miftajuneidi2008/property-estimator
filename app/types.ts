@@ -48,7 +48,6 @@ export interface Request {
   compoundArea: number
   compoundType?: string
   accessRoad: string
-  landMark: string
   distanceFromMain: string
   generalUse: string
   marketability: string

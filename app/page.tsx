@@ -67,14 +67,7 @@ function calculateConsultancyFee(projectCost: number): number {
   return projectCost * rates.baseRate * rates.structuralWeight
 }
 
-function depreciationRate(condition: string, yearBuilt: number) {
-  const age = new Date().getFullYear() - yearBuilt
-  // Per BRD: depreciation applied to building cost only
-  if (condition === "new") return age < 5 ? 0.02 : 0.05
-  if (condition === "moderate") return age < 15 ? 0.08 : age < 25 ? 0.15 : 0.22
-  if (condition === "old") return age < 25 ? 0.28 : age < 40 ? 0.38 : 0.48
-  return Math.min(0.45 + (age - 30) * 0.01, 0.70)
-}
+
 function calcValuation(r: Partial<Request>): ValResult {
   const bType = r.buildingType || "g+2"
   const area = r.totalArea || 0
@@ -103,18 +96,13 @@ function calcValuation(r: Partial<Request>): ValResult {
   const locRate = getDefaultLocationRate(r.town || "Addis Ababa")
   const locationValue = (r.plotArea || 0) * locRate
   
-  // ─── Depreciation per BRD 4.2.15 ───
-  // Depreciation applies only to building costs, not location value
-  const depRate = depreciationRate(r.condition || "moderate", r.yearBuilt || 2010)
-  const depAmount = (buildingCost + internalStructureCost + externalElectricalCost) * depRate
-  
-  // Final Property Value = Land Value + Building Value + External Works + Fence & Compound + Consultancy Fee - Depreciation
+  // Final Property Value = Land Value + Building Value + External Works + Fence & Compound + Consultancy Fee
   const totalConstruction = buildingCost + internalStructureCost + externalElectricalCost + fenceCompoundCost + consultancyCost
-  const marketValue = totalConstruction - depAmount + locationValue
+  const marketValue = totalConstruction + locationValue
   
   return {
     buildingCost, internalStructureCost, externalElectricalCost, fenceCompoundCost,
-    consultancyCost, locationValue, depRate, depAmount, marketValue,
+    consultancyCost, locationValue, depRate: 0, depAmount: 0, marketValue,
     marketLow: marketValue * 0.90, marketHigh: marketValue * 1.10,
     forcedSaleValue: marketValue * 0.90
   }
@@ -161,7 +149,7 @@ const SEED: Request[] = [
     ownershipCNo: "AA-NSL-02-2023-04521",
     town: "Addis Ababa", subCity: "Nifas Silk-Lafto", woreda: "02",
     plotArea: 94, compoundArea: 94, accessRoad: "Cobble",
-    landMark: "Near Megenagna Square", distanceFromMain: "200m",
+    distanceFromMain: "200m",
     generalUse: "Residential", marketability: "Marketable", housingStandard: "Excellent",
     developmentState: "Developing", futureTendency: "Promising",
     transportation: "Accessible", utilities: "Available",
@@ -195,8 +183,7 @@ const SEED: Request[] = [
     applicantName: "Solomon Girma Tadesse", applicantPhone: "+251-912-345-678",
     ownershipCNo: "AA-KIR-05-2022-09876",
     town: "Addis Ababa", subCity: "Kirkos", woreda: "05",
-    plotArea: 250, compoundArea: 300, accessRoad: "Asphalt",
-    landMark: "Behind Bole International Airport", distanceFromMain: "50m",
+    plotArea: 250, compoundArea: 300, accessRoad: "Asphalt", distanceFromMain: "50m",
     generalUse: "Commercial", marketability: "Highly Marketable", housingStandard: "Good",
     developmentState: "Developed", futureTendency: "Stable",
     transportation: "Very Accessible", utilities: "Available",
@@ -223,8 +210,7 @@ const SEED: Request[] = [
     applicantName: "Tigist Bekele Alemu", applicantPhone: "+251-913-456-789",
     ownershipCNo: "AA-YEK-08-2020-03344",
     town: "Addis Ababa", subCity: "Yeka", woreda: "08",
-    plotArea: 175, compoundArea: 200, accessRoad: "Gravel",
-    landMark: "Near Medhane Alem Church", distanceFromMain: "350m",
+    plotArea: 175, compoundArea: 200, accessRoad: "Gravel", distanceFromMain: "350m",
     generalUse: "Residential", marketability: "Marketable", housingStandard: "Average",
     developmentState: "Developing", futureTendency: "Promising",
     transportation: "Accessible", utilities: "Available",
@@ -247,8 +233,7 @@ const SEED: Request[] = [
     applicantName: "Abebe Mulugeta", applicantPhone: "+251-914-567-890",
     ownershipCNo: "AA-BOL-03-2019-07788",
     town: "Addis Ababa", subCity: "Bole", woreda: "03",
-    plotArea: 120, compoundArea: 130, accessRoad: "Cobble",
-    landMark: "Near Dembel City Center", distanceFromMain: "500m",
+    plotArea: 120, compoundArea: 130, accessRoad: "Cobble", distanceFromMain: "20m",
     generalUse: "Residential", marketability: "Marketable", housingStandard: "Average",
     developmentState: "Stable", futureTendency: "Stable",
     transportation: "Accessible", utilities: "Available",
@@ -274,8 +259,7 @@ const SEED: Request[] = [
     applicantName: "Nour Ibrahim Mohammed", applicantPhone: "+251-915-678-901",
     ownershipCNo: "AA-BOL-01-2024-11234",
     town: "Addis Ababa", subCity: "Bole", woreda: "01",
-    plotArea: 400, compoundArea: 450, accessRoad: "Asphalt",
-    landMark: "Adjacent to Edna Mall", distanceFromMain: "20m",
+    plotArea: 400, compoundArea: 450, accessRoad: "Asphalt", distanceFromMain: "20m",
     generalUse: "Commercial", marketability: "Highly Marketable", housingStandard: "Excellent",
     developmentState: "Developed", futureTendency: "Very Promising",
     transportation: "Highly Accessible", utilities: "Available",
@@ -301,8 +285,7 @@ const SEED: Request[] = [
     applicantName: "Mulunesh Haile Tesfaye", applicantPhone: "+251-916-789-012",
     ownershipCNo: "AA-ARA-04-2021-05567",
     town: "Addis Ababa", subCity: "Arada", woreda: "04",
-    plotArea: 220, compoundArea: 260, accessRoad: "Asphalt",
-    landMark: "Near Piassa Market", distanceFromMain: "100m",
+    plotArea: 220, compoundArea: 260, accessRoad: "Asphalt", distanceFromMain: "100m",
     generalUse: "Commercial", marketability: "Highly Marketable", housingStandard: "Good",
     developmentState: "Fully Developed", futureTendency: "Stable",
     transportation: "Very Accessible", utilities: "Available",
@@ -894,7 +877,6 @@ function RequestDetail({ request, user, onBack, onReview, onApprove, onReject, o
               ["Plot Area", `${request.plotArea} m²`],
               ["Compound Area", `${request.compoundArea} m²`],
               ["Access Road", request.accessRoad],
-              ["Land Mark", request.landMark],
             ].map(([k, v]) => (
               <div key={k as string}>
                 <p className="text-muted-foreground text-xs">{k}</p>
@@ -1289,9 +1271,9 @@ function EngineerReview({ request, onBack, onSubmit }: {
 // ─── New Request Wizard ──────────────────────────────────────────────
 const INIT_FORM: Partial<Request> = {
   applicantName: "", applicantPhone: "",
-  ownershipCNo: "", town: "Addis Ababa", subCity: "Bole",
+  ownershipCNo: "", town: "Addis Ababa", subCity: "Addis Ketema",
   woreda: "01", plotArea: 0, compoundArea: 0, compoundType: "Asphalt",
-  accessRoad: "Asphalt", landMark: "", distanceFromMain: "",
+  accessRoad: "Asphalt", distanceFromMain: "",
   generalUse: "Residential", marketability: "Marketable",
   housingStandard: "Average", developmentState: "Developing",
   futureTendency: "Stable", transportation: "Accessible", utilities: "Available",
