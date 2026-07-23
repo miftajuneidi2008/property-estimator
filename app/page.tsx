@@ -13,41 +13,11 @@ import {
   Phone, Check, Calculator, Info
 } from "lucide-react"
 import { Toaster, toast } from "sonner"
-
-// ─── Types ──────────────────────────────────────────────────────────
-type Role = "branch_manager" | "engineer" | "final_approver" | "admin"
-type Status = "draft" | "pending" | "under_review" | "approved" | "rejected" | "revision"
-type View = "dashboard" | "new_request" | "requests" | "detail" | "review" | "reports"
-
-interface AppUser { id: string; name: string; role: Role; branch: string; initials: string }
-interface Floor { label: string; area: number }
-interface ValResult {
-  buildingCost: number; internalStructureCost: number; externalElectricalCost: number
-  fenceCompoundCost: number; consultancyCost: number; locationValue: number
-  depRate: number; depAmount: number; marketValue: number
-  marketLow: number; marketHigh: number; forcedSaleValue: number
-}
-interface Request {
-  id: string; refNo: string; status: Status; branch: string
-  submittedBy: string; submittedAt: string; financingRequested?: number
-  applicantName: string; applicantPhone: string; ownershipCNo: string
-  town: string; subCity: string; woreda: string
-  plotArea: number; compoundArea: number; accessRoad: string
-  landMark: string; distanceFromMain: string
-  generalUse: string; marketability: string; housingStandard: string
-  developmentState: string; futureTendency: string; transportation: string; utilities: string
-  buildingType: string; floors: Floor[]; totalArea: number
-  wallType: string; roofType: string; floorFinish: string
-  lighting: string; doorsWindows: string; condition: string
-  yearBuilt: number; permitNo: string; titleDeedNo: string; presentUse: string
-  fenceLength: number; fenceType: string
-  gpsCoords: string; hasTatchedRoof: boolean
-  docs: Record<string, boolean>; remarks: string
-  valuation?: ValResult
-  engineerNotes?: string
-  reviewedBy?: string; reviewedAt?: string
-  approvedBy?: string; approvedAt?: string
-}
+import { WizardStep1 } from "./components/WizardStep1"
+import { WizardStep2 } from "./components/WizardStep2"
+import { WizardStep3 } from "./components/WizardStep3"
+import { WizardStep4 } from "./components/WizardStep4"
+import { Role, Status, View, AppUser, Floor, ValResult, Request } from "./types"
 
 // ─── Valuation Engine ───────────────────────────────────────────────
 const UNIT_RATES: Record<string, number> = {
@@ -70,16 +40,35 @@ const LOC_RATES: Record<string, number> = {
   "akaki kality": 6500, "gulele": 11500, "addis ketema": 15500,
   "outside_aa": 4000
 }
-function consultancyRate(c: number) {
-  if (c <= 500000) return 0.0425
-  if (c <= 1000000) return 0.0375
-  if (c <= 2500000) return 0.0325
-  if (c <= 5000000) return 0.0275
-  if (c <= 10000000) return 0.0225
-  return 0.0175
+// Consultancy fee with weighted components per BRD section 4.2.13
+function getConsultancyRate(projectCost: number): { baseRate: number; architecturalWeight: number; structuralWeight: number; electricalWeight: number; saninaryWeight: number; boqWeight: number } {
+  let baseRate = 0.0425
+  if (projectCost <= 500000) baseRate = 0.0425
+  else if (projectCost <= 1000000) baseRate = 0.0375
+  else if (projectCost <= 2500000) baseRate = 0.0325
+  else if (projectCost <= 5000000) baseRate = 0.0275
+  else if (projectCost <= 10000000) baseRate = 0.0225
+  else baseRate = 0.0175
+  
+  return {
+    baseRate,
+    architecturalWeight: 0.45,
+    structuralWeight: 0.30,
+    electricalWeight: 0.10,
+    saninaryWeight: 0.0275,
+    boqWeight: 0.0225
+  }
 }
+
+function calculateConsultancyFee(projectCost: number): number {
+  const rates = getConsultancyRate(projectCost)
+  // Assuming Structural plan as per BRD example (could be enhanced with user selection)
+  return projectCost * rates.baseRate * rates.structuralWeight
+}
+
 function depreciationRate(condition: string, yearBuilt: number) {
-  const age = 2024 - yearBuilt
+  const age = new Date().getFullYear() - yearBuilt
+  // Per BRD: depreciation applied to building cost only
   if (condition === "new") return age < 5 ? 0.02 : 0.05
   if (condition === "moderate") return age < 15 ? 0.08 : age < 25 ? 0.15 : 0.22
   if (condition === "old") return age < 25 ? 0.28 : age < 40 ? 0.38 : 0.48
@@ -91,16 +80,36 @@ function calcValuation(r: Partial<Request>): ValResult {
   const buildingCost = area * (UNIT_RATES[bType] || 38000)
   const internalStructureCost = bType.startsWith("villa") ? 200000 : buildingCost * 0.02
   const externalElectricalCost = buildingCost * (ELEC_RATES[bType] || 0.055)
+  
+  // ─── Fence & Compound Calculation per BRD 4.2.11 ───
+  // Fence Cost = Fence Length (m) × Fence Rate (ETB/m)
   const fenceCostPerM = r.fenceType === "brick" ? 1900 : r.fenceType === "stone" ? 1700 : 1400
-  const fenceCompoundCost = (r.fenceLength || 0) * fenceCostPerM
-  const sub = buildingCost + internalStructureCost + externalElectricalCost + fenceCompoundCost
-  const consultancyCost = sub * consultancyRate(sub)
+  const fenceCost = (r.fenceLength || 0) * fenceCostPerM
+  // Compound Cost = Compound Area (m²) × Unit Rate (ETB/m²)
+  // Standard compound rate (can be parameterized from reference data)
+  const compoundUnitRate = 850 // ETB/m² - can be updated from reference tables
+  const compoundCost = (r.compoundArea || 0) * compoundUnitRate
+  const fenceCompoundCost = fenceCost + compoundCost
+  
+  // Project Cost = Building Cost + Internal Structure + External Works + Fence & Compound
+  const projectCost = buildingCost + internalStructureCost + externalElectricalCost + fenceCompoundCost
+  
+  // ─── Consultancy Fee Calculation per BRD 4.2.13 ───
+  const consultancyCost = calculateConsultancyFee(projectCost)
+  
+  // Location Value (Land Value per BRD 4.2.1)
   const locRate = LOC_RATES[(r.subCity || "bole").toLowerCase()] || LOC_RATES["bole"]
   const locationValue = (r.plotArea || 0) * locRate
+  
+  // ─── Depreciation per BRD 4.2.15 ───
+  // Depreciation applies only to building costs, not location value
   const depRate = depreciationRate(r.condition || "moderate", r.yearBuilt || 2010)
-  const totalBuild = sub + consultancyCost
-  const depAmount = totalBuild * depRate
-  const marketValue = totalBuild - depAmount + locationValue
+  const depAmount = (buildingCost + internalStructureCost + externalElectricalCost) * depRate
+  
+  // Final Property Value = Land Value + Building Value + External Works + Fence & Compound + Consultancy Fee - Depreciation
+  const totalConstruction = buildingCost + internalStructureCost + externalElectricalCost + fenceCompoundCost + consultancyCost
+  const marketValue = totalConstruction - depAmount + locationValue
+  
   return {
     buildingCost, internalStructureCost, externalElectricalCost, fenceCompoundCost,
     consultancyCost, locationValue, depRate, depAmount, marketValue,
@@ -1279,7 +1288,7 @@ function EngineerReview({ request, onBack, onSubmit }: {
 const INIT_FORM: Partial<Request> = {
   applicantName: "", applicantPhone: "",
   ownershipCNo: "", town: "Addis Ababa", subCity: "Bole",
-  woreda: "01", plotArea: 0, compoundArea: 0,
+  woreda: "01", plotArea: 0, compoundArea: 0, compoundType: "Asphalt",
   accessRoad: "Asphalt", landMark: "", distanceFromMain: "",
   generalUse: "Residential", marketability: "Marketable",
   housingStandard: "Average", developmentState: "Developing",
@@ -1289,7 +1298,7 @@ const INIT_FORM: Partial<Request> = {
   floorFinish: "Ceramic Tiles", lighting: "Electrical",
   doorsWindows: "Aluminium", condition: "moderate",
   yearBuilt: 2015, permitNo: "", titleDeedNo: "", presentUse: "",
-  fenceLength: 0, fenceType: "hcb",
+  fenceLength: 0, fenceType: "hcb", fenceHeight: 1.8,
   gpsCoords: "", hasTatchedRoof: false,
   docs: { titleDeed: false, permit: false, plan: false, photos: false, gps: false },
   remarks: "", financingRequested: 0
@@ -1308,13 +1317,6 @@ function NewRequestWizard({ onSubmit, onCancel }: {
   const updateTotalArea = (floors: Floor[]) => {
     set("floors", floors)
     set("totalArea", floors.reduce((s, f) => s + (f.area || 0), 0))
-  }
-
-  const addFloor = () => {
-    const labels = ["GF", "FF", "2F", "3F", "4F", "5F", "6F", "7F", "8F", "9F", "10F"]
-    const current = form.floors || []
-    const next = labels[current.length] || `${current.length}F`
-    updateTotalArea([...current, { label: next, area: 0 }])
   }
 
   const previewVal = calcValuation(form)
@@ -1337,318 +1339,16 @@ function NewRequestWizard({ onSubmit, onCancel }: {
       </div>
 
       {/* Step 1 */}
-      {step === 1 && (
-        <div className="bg-white rounded-xl border border-border shadow-sm p-5 space-y-4">
-          <h3 className="font-semibold text-foreground">Applicant & Property Information</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {[
-              { label: "Applicant Full Name *", key: "applicantName", type: "text", placeholder: "Full legal name" },
-              { label: "Applicant Phone", key: "applicantPhone", type: "tel", placeholder: "+251-9XX-XXX-XXX" },
-              { label: "Ownership Certificate No. *", key: "ownershipCNo", type: "text", placeholder: "AA-XXX-XX-XXXX-XXXXX" },
-              { label: "Financing Amount Requested (ETB)", key: "financingRequested", type: "number", placeholder: "0.00" },
-            ].map(f => (
-              <div key={f.key}>
-                <label className="block text-xs font-medium text-muted-foreground mb-1.5">{f.label}</label>
-                <input
-                  type={f.type}
-                  placeholder={f.placeholder}
-                  value={(form as any)[f.key] || ""}
-                  onChange={e => set(f.key as keyof Request, f.type === "number" ? parseFloat(e.target.value) || 0 : e.target.value)}
-                  className="w-full border border-border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#006B5E]/30 focus:border-[#006B5E]"
-                />
-              </div>
-            ))}
-          </div>
-          <hr className="border-border" />
-          <h4 className="font-medium text-foreground text-sm">Property Location</h4>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {[
-              { label: "Town", key: "town" },
-              { label: "Sub-City", key: "subCity" },
-              { label: "Woreda", key: "woreda" },
-              { label: "House No.", key: "houseNo" },
-            ].map(f => (
-              <div key={f.key}>
-                <label className="block text-xs font-medium text-muted-foreground mb-1.5">{f.label}</label>
-                <input
-                  type="text"
-                  value={(form as any)[f.key] || ""}
-                  onChange={e => set(f.key as keyof Request, e.target.value)}
-                  className="w-full border border-border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#006B5E]/30 focus:border-[#006B5E]"
-                />
-              </div>
-            ))}
-            {[
-              { label: "Plot Area (m²) *", key: "plotArea", type: "number" },
-              { label: "Compound Area (m²)", key: "compoundArea", type: "number" },
-              { label: "Distance from Main Road", key: "distanceFromMain" },
-              { label: "Land Mark / Nearby Landmark", key: "landMark" },
-            ].map(f => (
-              <div key={f.key}>
-                <label className="block text-xs font-medium text-muted-foreground mb-1.5">{f.label}</label>
-                <input
-                  type={f.type || "text"}
-                  value={(form as any)[f.key] || ""}
-                  onChange={e => set(f.key as keyof Request, f.type === "number" ? parseFloat(e.target.value) || 0 : e.target.value)}
-                  className="w-full border border-border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#006B5E]/30 focus:border-[#006B5E]"
-                />
-              </div>
-            ))}
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1.5">Type of Access Road</label>
-            <div className="flex gap-3">
-              {["Asphalt", "Gravel", "Cobble"].map(opt => (
-                <label key={opt} className={`flex items-center gap-2 px-4 py-2.5 border-2 rounded-lg cursor-pointer transition-colors text-sm ${form.accessRoad === opt ? "border-[#006B5E] bg-[#006B5E]/5 text-[#006B5E] font-medium" : "border-border text-foreground hover:border-gray-300"}`}>
-                  <input type="radio" className="sr-only" checked={form.accessRoad === opt} onChange={() => set("accessRoad", opt)} />
-                  {opt}
-                </label>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+      {step === 1 && <WizardStep1 form={form} set={set} />}
 
       {/* Step 2 */}
-      {step === 2 && (
-        <div className="bg-white rounded-xl border border-border shadow-sm p-5 space-y-4">
-          <h3 className="font-semibold text-foreground">Neighborhood Analysis</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {[
-              { label: "General Use", key: "generalUse", opts: ["Residential", "Commercial", "Industrial", "Mixed Use"] },
-              { label: "Marketability", key: "marketability", opts: ["Highly Marketable", "Marketable", "Limited", "Not Marketable"] },
-              { label: "Standard of Housing", key: "housingStandard", opts: ["Excellent", "Good", "Average", "Poor"] },
-              { label: "Development State", key: "developmentState", opts: ["Fully Developed", "Developed", "Developing", "Undeveloped"] },
-              { label: "Future Tendency", key: "futureTendency", opts: ["Very Promising", "Promising", "Stable", "Declining"] },
-              { label: "Transportation Facilities", key: "transportation", opts: ["Highly Accessible", "Very Accessible", "Accessible", "Limited"] },
-              { label: "Utilities (Water, Power, etc.)", key: "utilities", opts: ["Available", "Partially Available", "Not Available"] },
-            ].map(f => (
-              <div key={f.key}>
-                <label className="block text-xs font-medium text-muted-foreground mb-1.5">{f.label}</label>
-                <select
-                  value={(form as any)[f.key] || ""}
-                  onChange={e => set(f.key as keyof Request, e.target.value)}
-                  className="w-full border border-border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#006B5E]/30 focus:border-[#006B5E] bg-white"
-                >
-                  {f.opts.map(o => <option key={o}>{o}</option>)}
-                </select>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {step === 2 && <WizardStep2 form={form} set={set} />}
 
       {/* Step 3 */}
-      {step === 3 && (
-        <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-border shadow-sm p-5 space-y-4">
-            <h3 className="font-semibold text-foreground">Building Specifications</h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-              <div className="col-span-2 sm:col-span-1">
-                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Building Type *</label>
-                <select
-                  value={form.buildingType || "g+2"}
-                  onChange={e => set("buildingType", e.target.value)}
-                  className="w-full border border-border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#006B5E]/30 focus:border-[#006B5E] bg-white"
-                >
-                  <option value="villa_lower">Villa Lower</option>
-                  <option value="villa_higher">Villa Higher</option>
-                  {["g+1","g+2","g+3","g+4","g+5","g+6","g+7","g+8","g+9","g+10","g+11+"].map(g => (
-                    <option key={g} value={g}>{g.toUpperCase()} Building</option>
-                  ))}
-                  <option value="hall">Multi-Purpose Hall</option>
-                  <option value="factory">Factory</option>
-                  <option value="warehouse">Warehouse</option>
-                </select>
-              </div>
-              {[
-                { label: "Present Use", key: "presentUse", placeholder: "e.g. G+2 Residence" },
-                { label: "Construction Permit No.", key: "permitNo", placeholder: "CP/XXX/XXXX/XXXXX" },
-                { label: "Title Deed No.", key: "titleDeedNo", placeholder: "TD-AA-XXX-XXXX-XXXXX" },
-                { label: "Condition", key: "condition", type: "select", opts: [["new", "New"], ["moderate", "Moderate"], ["old", "Old"], ["very_old", "Very Old"]] },
-                { label: "Year Built", key: "yearBuilt", type: "number", placeholder: "YYYY" },
-              ].map((f: any) => (
-                <div key={f.key}>
-                  <label className="block text-xs font-medium text-muted-foreground mb-1.5">{f.label}</label>
-                  {f.type === "select" ? (
-                    <select
-                      value={(form as any)[f.key] || ""}
-                      onChange={e => set(f.key as keyof Request, e.target.value)}
-                      className="w-full border border-border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#006B5E]/30 focus:border-[#006B5E] bg-white"
-                    >
-                      {f.opts.map(([v, l]: [string, string]) => <option key={v} value={v}>{l}</option>)}
-                    </select>
-                  ) : (
-                    <input
-                      type={f.type || "text"}
-                      placeholder={f.placeholder}
-                      value={(form as any)[f.key] || ""}
-                      onChange={e => set(f.key as keyof Request, f.type === "number" ? parseInt(e.target.value) || 0 : e.target.value)}
-                      className="w-full border border-border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#006B5E]/30 focus:border-[#006B5E]"
-                    />
-                  )}
-                </div>
-              ))}
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              {[
-                { label: "Wall Type", key: "wallType", opts: ["HCB", "HCB with RC Frame", "Stone Masonry", "Brick", "Wood", "Other"] },
-                { label: "Roof Type", key: "roofType", opts: ["Tiles", "EGA Sheet", "RC Slab", "Asbestos", "Thatch"] },
-                { label: "Floor Finish", key: "floorFinish", opts: ["Tiles", "Marble", "Ceramic Tiles", "Cement Screed", "Terrazzo", "Parquet"] },
-                { label: "Lighting System", key: "lighting", opts: ["Electrical", "Electrical with Solar Backup", "Solar", "None"] },
-                { label: "Doors & Windows", key: "doorsWindows", opts: ["Aluminium", "Aluminium with Double Glass", "Steel", "Aluminium with Tempered Glass", "Wood"] },
-              ].map(f => (
-                <div key={f.key}>
-                  <label className="block text-xs font-medium text-muted-foreground mb-1.5">{f.label}</label>
-                  <select
-                    value={(form as any)[f.key] || ""}
-                    onChange={e => set(f.key as keyof Request, e.target.value)}
-                    className="w-full border border-border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#006B5E]/30 focus:border-[#006B5E] bg-white"
-                  >
-                    {f.opts.map(o => <option key={o}>{o}</option>)}
-                  </select>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Floor areas */}
-          <div className="bg-white rounded-xl border border-border shadow-sm p-5 space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-foreground text-sm">Floor Areas (m²)</h3>
-              <button
-                onClick={addFloor}
-                className="text-[#006B5E] hover:bg-[#006B5E]/10 px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1 transition-colors"
-              >
-                <Plus size={13} /> Add Floor
-              </button>
-            </div>
-            {(form.floors || []).map((fl, i) => (
-              <div key={i} className="flex items-center gap-3">
-                <div className="w-12 h-9 bg-muted rounded-lg flex items-center justify-center text-xs font-bold text-[#006B5E]">{fl.label}</div>
-                <input
-                  type="number"
-                  placeholder="Area in m²"
-                  value={fl.area || ""}
-                  onChange={e => {
-                    const floors = [...(form.floors || [])]
-                    floors[i] = { ...floors[i], area: parseFloat(e.target.value) || 0 }
-                    updateTotalArea(floors)
-                  }}
-                  className="flex-1 border border-border rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#006B5E]/30 focus:border-[#006B5E]"
-                />
-                <span className="text-xs text-muted-foreground">m²</span>
-                {i > 0 && (
-                  <button
-                    onClick={() => {
-                      const floors = (form.floors || []).filter((_, j) => j !== i)
-                      updateTotalArea(floors)
-                    }}
-                    className="text-red-400 hover:text-red-600 p-1 rounded transition-colors"
-                  ><X size={14} /></button>
-                )}
-              </div>
-            ))}
-            <div className="flex justify-between items-center pt-2 border-t border-border">
-              <span className="text-sm font-medium text-foreground">Total Building Area</span>
-              <span className="font-mono font-bold text-[#006B5E]">{(form.totalArea || 0).toFixed(2)} m²</span>
-            </div>
-          </div>
-
-          {/* Fence */}
-          <div className="bg-white rounded-xl border border-border shadow-sm p-5 space-y-4">
-            <h3 className="font-semibold text-foreground text-sm">Fence & Compound</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Fence Length (m)</label>
-                <input
-                  type="number"
-                  value={form.fenceLength || ""}
-                  onChange={e => set("fenceLength", parseFloat(e.target.value) || 0)}
-                  className="w-full border border-border rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#006B5E]/30 focus:border-[#006B5E]"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1.5">Fence Type</label>
-                <select
-                  value={form.fenceType || "hcb"}
-                  onChange={e => set("fenceType", e.target.value)}
-                  className="w-full border border-border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#006B5E]/30 focus:border-[#006B5E] bg-white"
-                >
-                  <option value="hcb">HCB Fence (ETB 1,400/m)</option>
-                  <option value="stone">Stone Masonry (ETB 1,700/m)</option>
-                  <option value="brick">Brick Fence (ETB 1,900/m)</option>
-                </select>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {step === 3 && <WizardStep3 form={form} set={set} updateTotalArea={updateTotalArea} />}
 
       {/* Step 4 */}
-      {step === 4 && (
-        <div className="bg-white rounded-xl border border-border shadow-sm p-5 space-y-5">
-          <h3 className="font-semibold text-foreground">Documents & Additional Information</h3>
-
-          <div>
-            <h4 className="text-sm font-medium text-foreground mb-3">Required Documents</h4>
-            <div className="space-y-2">
-              {[
-                { key: "titleDeed", label: "Title Deed / Ownership Certificate", required: true },
-                { key: "permit", label: "Construction Permit", required: true },
-                { key: "plan", label: "Approved Architectural Plan", required: false },
-                { key: "photos", label: "Property Photos (min. 4)", required: true },
-                { key: "gps", label: "GPS Screenshot / Map", required: true },
-              ].map(d => (
-                <label key={d.key} className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/30 cursor-pointer transition-colors">
-                  <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${(form.docs as any)?.[d.key] ? "bg-[#006B5E] border-[#006B5E]" : "border-gray-300"}`}
-                    onClick={() => set("docs", { ...(form.docs || {}), [d.key]: !(form.docs as any)?.[d.key] })}>
-                    {(form.docs as any)?.[d.key] && <Check size={12} className="text-white" />}
-                  </div>
-                  <span className="text-sm text-foreground flex-1">{d.label}</span>
-                  {d.required && <span className="text-xs text-red-500 font-medium">Required</span>}
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1.5">GPS Coordinates</label>
-              <input
-                type="text"
-                placeholder="8.959403, 38.795122"
-                value={form.gpsCoords || ""}
-                onChange={e => set("gpsCoords", e.target.value)}
-                className="w-full border border-border rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#006B5E]/30 focus:border-[#006B5E]"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Any Thatched Roof on Site?</label>
-              <div className="flex gap-3">
-                {["Yes", "No"].map(opt => (
-                  <label key={opt} className={`flex items-center gap-2 px-4 py-2.5 border-2 rounded-lg cursor-pointer transition-colors text-sm ${(form.hasTatchedRoof ? "Yes" : "No") === opt ? "border-[#006B5E] bg-[#006B5E]/5 text-[#006B5E] font-medium" : "border-border text-foreground"}`}>
-                    <input type="radio" className="sr-only" checked={(form.hasTatchedRoof ? "Yes" : "No") === opt} onChange={() => set("hasTatchedRoof", opt === "Yes")} />
-                    {opt}
-                  </label>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1.5">Remarks / Additional Notes</label>
-            <textarea
-              value={form.remarks || ""}
-              onChange={e => set("remarks", e.target.value)}
-              placeholder="Any relevant notes, observations, or discrepancies to flag…"
-              className="w-full border border-border rounded-lg px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#006B5E]/30 focus:border-[#006B5E]"
-              rows={3}
-            />
-          </div>
-        </div>
-      )}
+      {step === 4 && <WizardStep4 form={form} set={set} />}
 
       {/* Step 5 */}
       {step === 5 && (
@@ -1758,7 +1458,7 @@ function NewRequestWizard({ onSubmit, onCancel }: {
   )
 }
 
-// ─── Reports ─────────────────────────────────────────────────────────
+// ─── Reports ────────���────────────────────────────────────────────────
 function Reports({ requests }: { requests: Request[] }) {
   const approved = requests.filter(r => r.status === "approved")
   const totalCollateral = approved.reduce((a, r) => a + (r.valuation?.marketValue || 0), 0)
